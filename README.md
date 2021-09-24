@@ -10,7 +10,7 @@ Options:
     --build-tag TAG         Specifies the package build tag.
     --build-number NUM      Specifies the package build number.
     --pkgdir DIR            Output packages to DIR (default: /tmp).
-    --no-banner              Leave out the pip2tgz banner in the description
+    --no-banner             Leave out the pip2tgz banner in the description.
     --pip CMD               Use CMD as the PIP binary (default: pip3).
     --prefix PREFIX         Use "{PREFIX}-PACKAGE" as the generated package
                               prefix (default is python3-).
