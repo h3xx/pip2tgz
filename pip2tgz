@@ -27,6 +27,7 @@ PKG_EXT=txz
 ARCH=$(uname -m)
 USE_MAKEPKG=1
 FORCE=0
+MODE=package
 
 SLACK_DESC_BANNER0="Packaged by $PIP2TGZ"
 SLACK_DESC_BANNER1="$PIP2TGZ by $PIP2TGZ_AUTHOR"
@@ -68,6 +69,7 @@ Options:
                               will clear this directory before outputting its
                               files there. By default, it uses a temporary
                               directory as the build jail.
+    --slack-required        Output the slack-required contents and exit.
 
 EOF
     COPYRIGHT_MESSAGE
@@ -162,6 +164,9 @@ main() {
                 let ++ai
                 PKG_EXT=${ARGS[$ai]}
                 ;;
+            --slack-required)
+                MODE=slack-required
+                ;;
             --|[^-]*)
                 break
                 ;;
@@ -179,7 +184,7 @@ main() {
 
     shift $ai
 
-    if [[ $UID -ne 0 && $USE_MAKEPKG -ne 0 ]]; then
+    if [[ $MODE = 'package' && $UID -ne 0 && $USE_MAKEPKG -ne 0 ]]; then
         if [[ $FORCE -eq 0 ]]; then
             printf '%s\n%s\n%s\n%s\n' \
                 'Politely refusing to build packages without proper permissions. Either...' \
@@ -205,25 +210,32 @@ main() {
         _WHEEL_FILE
 
     for PKG; do
-        _JAIL=$(realpath -- "${JAIL:-$(mktemp -d -p "$TEMPDIR" -t "jail.XXXXXX")}")
-        _WHEEL_FILE=$(wheel_file "$PKG")
-        _VER=$(wheel_version "$_WHEEL_FILE")
 
-        # Correct package name as it exists in pip
-        # e.g. Foo-Bar could be and probably is Foo_Bar
-        _REAL_PKG=${_WHEEL_FILE##*/}
-        _REAL_PKG=${_REAL_PKG:0:${#PKG}}
-        if [[ $_REAL_PKG != $PKG ]]; then
-            warn 'Warning: Real package name is %s\n' "$_REAL_PKG"
-            PKG=$_REAL_PKG
-        fi
+        case "$MODE" in
+            package)
+                _JAIL=$(realpath -- "${JAIL:-$(mktemp -d -p "$TEMPDIR" -t "jail.XXXXXX")}")
+                _WHEEL_FILE=$(wheel_file "$PKG")
+                _VER=$(wheel_version "$_WHEEL_FILE")
 
-        make_package_jail "$PKG" "$_JAIL" "$_VER"
-        if [[ $USE_MAKEPKG -ne 0 ]]; then
-            _OUTPUT=$(realpath -- "$PKG_OUTDIR")/$(pip_package_to_slackpack_name "$PKG")-$_VER-$ARCH-$BUILD_NUMBER$BUILD_TAG.$PKG_EXT
-            echo "outputting to $_OUTPUT" >&2
-            tarup_package "$_JAIL" "$_OUTPUT"
-        fi
+                # Correct package name as it exists in pip
+                # e.g. Foo-Bar could be and probably is Foo_Bar
+                _REAL_PKG=${_WHEEL_FILE##*/}
+                _REAL_PKG=${_REAL_PKG:0:${#PKG}}
+                if [[ $_REAL_PKG != $PKG ]]; then
+                    warn 'Warning: Real package name is %s\n' "$_REAL_PKG"
+                    PKG=$_REAL_PKG
+                fi
+                make_package_jail "$PKG" "$_JAIL" "$_VER"
+                if [[ $USE_MAKEPKG -ne 0 ]]; then
+                    _OUTPUT=$(realpath -- "$PKG_OUTDIR")/$(pip_package_to_slackpack_name "$PKG")-$_VER-$ARCH-$BUILD_NUMBER$BUILD_TAG.$PKG_EXT
+                    echo "outputting to $_OUTPUT" >&2
+                    tarup_package "$_JAIL" "$_OUTPUT"
+                fi
+                ;;
+            slack-required)
+                gen_slack_required "$PKG"
+                ;;
+        esac
     done
 }
 
@@ -326,6 +338,27 @@ pip_package_to_slackpack_name() {
         tr A-Z a-z
 }
 
+gen_slack_required() {
+    local \
+        PACKAGE_NAME=$1
+    (
+        # Add deps in $BASE_REQUIRES
+        for _SLACK_PKG in "${BASE_REQUIRES[@]}"; do
+            printf '%s\n' "$_SLACK_PKG"
+        done
+        # Scan and add python library deps
+        python_deps "$PACKAGE_NAME" |
+        while read -r _LINE; do
+            # TODO Some are formatted with a number, e.g. click>=7.1.2
+            _PIP_BASE=${_LINE%%[<>=]*}
+            _VER_REQ=${_LINE:${#_PIP_BASE}}
+            _SLK_BASE=$(pip_package_to_slackpack_name "$_PIP_BASE")
+            printf '%s%s\n' "$_SLK_BASE" "$_VER_REQ"
+        done
+    ) |
+    sort -u
+}
+
 install_slackware_metadata() {
     local \
         JAIL=$1 \
@@ -360,22 +393,7 @@ $PKG_BASE:
 EOF
 
     # slack-required
-    (
-        # Add deps in $BASE_REQUIRES
-        for _SLACK_PKG in "${BASE_REQUIRES[@]}"; do
-            printf '%s\n' "$_SLACK_PKG"
-        done
-        # Scan and add python library deps
-        python_deps "$PACKAGE_NAME" |
-        while read -r _LINE; do
-            # TODO Some are formatted with a number, e.g. click>=7.1.2
-            _PIP_BASE=${_LINE%%[<>=]*}
-            _VER_REQ=${_LINE:${#_PIP_BASE}}
-            _SLK_BASE=$(pip_package_to_slackpack_name "$_PIP_BASE")
-            printf '%s%s\n' "$_SLK_BASE" "$_VER_REQ"
-        done
-    ) |
-    sort -u > "$JAIL/install/slack-required"
+    gen_slack_required "$PACKAGE_NAME" > "$JAIL/install/slack-required"
 }
 
 install_docdir() {
