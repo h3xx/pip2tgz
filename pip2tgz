@@ -285,6 +285,7 @@ wheel_file() {
     local PACKAGE_NAME=$1
     local WHEEL_BASENAME=$(
         pip_download "$PACKAGE_NAME" "$TEMPDIR" |
+        tee /dev/stderr |
         grep -oP '[^\s]+\.whl\b' |
         head -1
     )
