@@ -205,7 +205,7 @@ main() {
         PKG \
         _JAIL \
         _OUTPUT \
-        _REAL_PKG \
+        _PKG_BASE \
         _VER \
         _WHEEL_FILE
 
@@ -219,13 +219,8 @@ main() {
 
                 # Correct package name as it exists in pip
                 # e.g. Foo-Bar could be and probably is Foo_Bar
-                _REAL_PKG=${_WHEEL_FILE##*/}
-                _REAL_PKG=${_REAL_PKG:0:${#PKG}}
-                if [[ $_REAL_PKG != $PKG ]]; then
-                    warn 'Warning: Real package name is %s\n' "$_REAL_PKG"
-                    PKG=$_REAL_PKG
-                fi
-                make_package_jail "$PKG" "$_JAIL" "$_VER"
+                _PKG_BASE=$(wheel_name "$_WHEEL_FILE")
+                make_package_jail "$PKG" "$_PKG_BASE" "$_JAIL" "$_VER"
                 if [[ $USE_MAKEPKG -ne 0 ]]; then
                     _OUTPUT=$(realpath -- "$PKG_OUTDIR")/$(pip_package_to_slackpack_name "$PKG")-$_VER-$ARCH-$BUILD_NUMBER$BUILD_TAG.$PKG_EXT
                     echo "outputting to $_OUTPUT" >&2
@@ -242,12 +237,13 @@ main() {
 make_package_jail() {
     local \
         PACKAGE_NAME=$1 \
-        JAIL=$2 \
-        VER=$3
+        PACKAGE_BASE=$2 \
+        JAIL=$3 \
+        VER=$4
 
     pip_install_into_jail "$JAIL" "$PACKAGE_NAME"
-    install_slackware_metadata "$JAIL" "$PACKAGE_NAME"
-    install_docdir "$JAIL" "$PACKAGE_NAME" "$VER"
+    install_slackware_metadata "$JAIL" "$PACKAGE_BASE"
+    install_docdir "$JAIL" "$PACKAGE_BASE" "$VER"
     fix_jail_permissions "$JAIL"
 }
 
@@ -310,6 +306,18 @@ from pkginfo import Wheel
 from sys import argv
 w = Wheel(argv[1])
 print(w.version)
+    ' "$WHEEL_FILE"
+}
+
+wheel_name() {
+    local WHEEL_FILE=$1
+    # Ensure we can load pkginfo
+    temp_install_library pkginfo
+    "$PYTHON" -c '
+from pkginfo import Wheel
+from sys import argv
+w = Wheel(argv[1])
+print(w.name)
     ' "$WHEEL_FILE"
 }
 
