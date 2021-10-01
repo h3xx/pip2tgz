@@ -258,7 +258,6 @@ pip_download() {
     "$PIP" download "$PACKAGE_NAME" \
         "${PIP_ARGS_GENERAL[@]}" \
         -d "$TEMPDIR" \
-        --no-deps \
         --no-binary :all:-v
 }
 
