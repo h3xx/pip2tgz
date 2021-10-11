@@ -175,6 +175,10 @@ main() {
                 let ++ai
                 PKG_EXT=${ARGS[$ai]}
                 ;;
+            --prefix)
+                let ++ai
+                PKG_PREFIX=${ARGS[$ai]}
+                ;;
             --slack-required)
                 MODE=slack-required
                 ;;
