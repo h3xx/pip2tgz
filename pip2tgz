@@ -343,7 +343,8 @@ pip_install_into_jail() {
 pip_package_to_slackpack_name() {
     local PACKAGE_NAME=$1
     printf '%s%s\n' "$PKG_PREFIX" "$PACKAGE_NAME" |
-        tr A-Z a-z
+        tr A-Z a-z |
+        tr _ -
 }
 
 gen_slack_required() {
