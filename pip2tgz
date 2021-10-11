@@ -410,7 +410,8 @@ install_docdir() {
     local \
         JAIL=$1 \
         PACKAGE_NAME=$2 \
-        VER=$3
+        VER=$3 \
+        FN
 
     local PKG_BASE=$(pip_package_to_slackpack_name "$PACKAGE_NAME")
 
@@ -419,19 +420,29 @@ install_docdir() {
 
     local DINFO_DIR=$(find "$JAIL/" -type d -name "*.dist-info" | head -1)
     if [[ -d $DINFO_DIR ]]; then
-        for fn in "$DINFO_DIR"/*; do
-            case "${fn##*/}" in
+        for FN in "$DINFO_DIR"/*; do
+            case "${FN##*/}" in
+                dependency_links.txt | \
+                entry_points.txt | \
+                installed-files.txt | \
                 INSTALLER | \
                 METADATA | \
+                metadata.json | \
+                namespace_packages.txt | \
+                not-zip-safe | \
+                PKG-INFO | \
                 RECORD | \
                 REQUESTED | \
+                requires.txt | \
+                SOURCES.txt | \
                 top_level.txt | \
-                WHEEL)
+                WHEEL | \
+                zip-safe)
                     # Skip
                     ;;
                 *)
                     ln -sfv -- \
-                        "$(realpath --relative-to="$DOCDIR" -- "$fn")" \
+                        "$(realpath --relative-to="$DOCDIR" -- "$FN")" \
                         "$DOCDIR/"
                     ;;
             esac
