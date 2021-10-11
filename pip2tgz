@@ -337,6 +337,7 @@ pip_install_into_jail() {
         "${PIP_ARGS_GENERAL[@]}" \
         --ignore-installed \
         --no-deps \
+        --no-warn-script-location \
         --root "$JAIL"
 }
 
