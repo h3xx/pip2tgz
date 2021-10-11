@@ -264,11 +264,17 @@ make_package_jail() {
     fix_jail_permissions "$JAIL"
 }
 
+pip_cmd() {
+    # Sometimes pip has trouble with latin-1 terminals
+    LANG=en_US.utf8 \
+    "$PIP" "$@"
+}
+
 pip_download() {
     local \
         PACKAGE_NAME=$1 \
         DEST_DIR=${2:-$TEMPDIR}
-    "$PIP" download "$PACKAGE_NAME" \
+    pip_cmd download "$PACKAGE_NAME" \
         "${PIP_ARGS_GENERAL[@]}" \
         -d "$TEMPDIR" \
         --no-binary :all:
@@ -339,7 +345,7 @@ pip_install_into_jail() {
     local \
         JAIL=$1 \
         PACKAGE_NAME=$2
-    "$PIP" install "$PACKAGE_NAME" \
+    pip_cmd install "$PACKAGE_NAME" \
         "${PIP_ARGS_GENERAL[@]}" \
         --no-binary :all: \
         --ignore-installed \
