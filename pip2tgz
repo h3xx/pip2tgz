@@ -205,22 +205,20 @@ main() {
         PKG \
         _JAIL \
         _OUTPUT \
-        _PKG_BASE \
         _VER \
-        _WHEEL_FILE
+        _TARBALL_FILENAME
 
     for PKG; do
 
         case "$MODE" in
             package)
                 _JAIL=$(realpath -- "${JAIL:-$(mktemp -d -p "$TEMPDIR" -t "jail.XXXXXX")}")
-                _WHEEL_FILE=$(wheel_file "$PKG")
-                _VER=$(wheel_version "$_WHEEL_FILE")
+                _TARBALL_FILENAME=$(tarball_file "$PKG")
+                _VER=$(tarball_version "$_TARBALL_FILENAME")
 
                 # Correct package name as it exists in pip
                 # e.g. Foo-Bar could be and probably is Foo_Bar
-                _PKG_BASE=$(wheel_name "$_WHEEL_FILE")
-                make_package_jail "$PKG" "$_PKG_BASE" "$_JAIL" "$_VER"
+                make_package_jail "$PKG" "$_TARBALL_FILENAME" "$_JAIL" "$_VER"
                 if [[ $USE_MAKEPKG -ne 0 ]]; then
                     _OUTPUT=$(realpath -- "$PKG_OUTDIR")/$(pip_package_to_slackpack_name "$PKG")-$_VER-$ARCH-$BUILD_NUMBER$BUILD_TAG.$PKG_EXT
                     echo "outputting to $_OUTPUT" >&2
@@ -235,15 +233,22 @@ main() {
 }
 
 make_package_jail() {
+    # PACKAGE_NAME: The requested package e.g. 'Foolibrary', 'MyPackage==1.0.0'
+    # TARBALL_FILENAME: The full path to the tarball generating the package
+    # JAIL: Full path to build jail directory
+    # VER: The detected package version
     local \
         PACKAGE_NAME=$1 \
-        PACKAGE_BASE=$2 \
+        TARBALL_FILENAME=$2 \
         JAIL=$3 \
         VER=$4
+    # PACKAGE_BASE: Real base name of package with capitalization intact, e.g.
+    #   MyLibrary
+    local -r PACKAGE_BASE=$(tarball_name "$TARBALL_FILENAME")
 
     pip_install_into_jail "$JAIL" "$PACKAGE_NAME"
     install_slackware_metadata "$JAIL" "$PACKAGE_BASE"
-    install_docdir "$JAIL" "$PACKAGE_BASE" "$VER"
+    install_docdir "$JAIL" "$PACKAGE_BASE" "$TARBALL_FILENAME" "$VER"
     fix_jail_permissions "$JAIL"
 }
 
@@ -254,71 +259,60 @@ pip_download() {
     "$PIP" download "$PACKAGE_NAME" \
         "${PIP_ARGS_GENERAL[@]}" \
         -d "$TEMPDIR" \
-        --no-binary :all:-v
+        --no-binary :all:
 }
 
-has_library() {
-    local LIBRARY=$1
-    "$PIP" show "$LIBRARY" >/dev/null
-}
-
-temp_install_library() {
-    local LIBRARY
-    for LIBRARY; do
-        if ! has_library "$LIBRARY"; then
-            # System library not found
-            "$PIP" install \
-                "${PIP_ARGS_GENERAL[@]}" \
-                -t "$TEMP_PYTHONLIBDIR" \
-                "$LIBRARY" \
-                >/dev/null \
-                || return
-        fi
-    done
-}
-
-wheel_file() {
+tarball_file() {
     local PACKAGE_NAME=$1
-    local WHEEL_BASENAME=$(
+    local TARBALL_FILENAME=$(
         pip_download "$PACKAGE_NAME" "$TEMPDIR" |
         tee /dev/stderr |
-        grep -oP '[^\s]+\.whl\b' |
+        grep -oP -- '\S+\.tar\S*\b' |
         head -1
-    )
-    if [[ -z $WHEEL_BASENAME ]]; then
+    ) || exit
+
+    if [[ -z $TARBALL_FILENAME ]]; then
         printf 'Failed to parse output from "%s download %s"\n' "$PIP" "$PACKAGE_NAME" >&2
         exit 2
     fi
-    local WHEEL_FILE=$TEMPDIR/$WHEEL_BASENAME
-    if [[ ! -f $WHEEL_FILE ]]; then
-        printf 'Failed to download %s\n' "$WHEEL_FILE" >&2
+
+    # Normalize path to where it really downloaded
+    # Sometimes the line says "Using cached MyPackage-1.0.0.tar.gz"
+    # Other times the line says "File was already downloaded /tmp/tempdir/MyPackage-1.0.0.tar.gz"
+    # Still other times the line says "Downloading MyPackage-1.0.0.tar.gz (7.8 MB)"
+    TARBALL_FILENAME=$TEMPDIR/${TARBALL_FILENAME##*/}
+    if [[ ! -f $TARBALL_FILENAME ]]; then
+        printf 'Failed to download %s\n' "$PACKAGE_NAME" >&2
         exit 2
     fi
-    printf '%s\n' "$WHEEL_FILE"
+    printf '%s\n' "$TARBALL_FILENAME"
 }
 
-wheel_version() {
-    local WHEEL_FILE=$1
-    # Ensure we can load pkginfo
-    temp_install_library pkginfo
-    "$PYTHON" -c '
-from pkginfo import Wheel
-from sys import argv
-w = Wheel(argv[1])
-print(w.version)
-    ' "$WHEEL_FILE"
+tarball_version() {
+    local -r TARBALL_BASENAME=${1##*/}
+    local VER=$(
+        grep -oP -- '-([0-9]+\.)+' <<< "$TARBALL_BASENAME"
+    )
+    # Clean up version e.g. "-1.0.0."
+    VER=${VER%.}
+    VER=${VER#-}
+    if [[ -z $VER ]]; then
+        printf 'Unable to parse version from tarball "%s"\n' "$TARBALL_BASENAME" >&2
+    fi
+    printf '%s\n' "$VER"
 }
 
-wheel_name() {
-    local WHEEL_FILE=$1
-    # Ensure we can load pkginfo
-    temp_install_library pkginfo
-    "$PYTHON" -c '
-from pkginfo import Wheel
-from sys import argv
-w = Wheel(argv[1])
-print(w.name)
-    ' "$WHEEL_FILE"
+tarball_name() {
+    local -r TARBALL_BASENAME=${1##*/}
+    local -r STRIP=$(
+        grep -oP -- '-([0-9]+\.)+.*' <<< "$TARBALL_BASENAME"
+    )
+    # Strip off version string, including hyphen
+    local -r NAME=${TARBALL_BASENAME:0:${#TARBALL_BASENAME}-${#STRIP}}
+    if [[ -z $NAME ]]; then
+        printf 'Unable to parse package name from tarball "%s"\n' "$TARBALL_BASENAME" >&2
+    fi
+    printf '%s\n' "$NAME"
 }
 
 python_deps() {
@@ -335,6 +329,7 @@ pip_install_into_jail() {
         PACKAGE_NAME=$2
     "$PIP" install "$PACKAGE_NAME" \
         "${PIP_ARGS_GENERAL[@]}" \
+        --no-binary :all: \
         --ignore-installed \
         --no-deps \
         --no-warn-script-location \
@@ -410,7 +405,8 @@ install_docdir() {
     local \
         JAIL=$1 \
         PACKAGE_NAME=$2 \
-        VER=$3 \
+        TARBALL_FILENAME=$3 \
+        VER=$4 \
         FN
 
     local PKG_BASE=$(pip_package_to_slackpack_name "$PACKAGE_NAME")
@@ -418,7 +414,16 @@ install_docdir() {
     local DOCDIR=$JAIL/usr/doc/$PKG_BASE-$VER
     mkdir -p -- "$DOCDIR"
 
-    local DINFO_DIR=$(find "$JAIL/" -type d -name "*.dist-info" | head -1)
+    local DINFO_DIR=$(
+        find "$JAIL/" \
+            -type d \
+            \( \
+                -name "*.dist-info" \
+                -o -name "*.egg-info" \
+            \) |
+        head -1
+    )
+
     if [[ -d $DINFO_DIR ]]; then
         for FN in "$DINFO_DIR"/*; do
             case "${FN##*/}" in
@@ -448,7 +453,40 @@ install_docdir() {
             esac
         done
     fi
-    # else - just skip making doc links
+
+    # Install missing docs from the original tarball ("pip3 install
+    # --no-binary" doesn't install some docs)
+
+    if [[ -f $TARBALL_FILENAME ]]; then
+        UNTAR_DIR=$(mktemp -d -p "$TEMPDIR" -t "${0##*/}.XXXXXX")
+        if tar -x -C "$UNTAR_DIR" -f "$TARBALL_FILENAME"; then
+            for FN in \
+                "$UNTAR_DIR"/* \
+                "$UNTAR_DIR"/*/* \
+                ; do
+                if [[
+                    -f $FN
+                    # Isn't a template file
+                    && ! $FN =~ \.in$
+                    # Isn't already installed
+                    && ! -e $DOCDIR/${FN##*/}
+                ]]; then
+                    case "${FN##*/}" in
+                        AUTHORS* | \
+                        CHANGES* | \
+                        COPYING* | \
+                        DESCRIPTION* | \
+                        LICENSE* | \
+                        README*)
+                            install -p -m 0644 -- \
+                                "$FN" "$DOCDIR/"
+                            ;;
+                    esac
+                fi
+            done
+        fi
+    fi
+
 }
 
 fix_jail_permissions() {
