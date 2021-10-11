@@ -21,6 +21,7 @@ PYTHON=python3
 BASE_REQUIRES=(python3)
 PKG_OUTDIR=/tmp
 PKG_PREFIX=python3-
+ALT_PKG_PREFIXES=(python-)
 BUILD_TAG=
 BUILD_NUMBER=1
 PKG_EXT=txz
@@ -59,6 +60,9 @@ Options:
     --pip CMD               Use CMD as the PIP binary (default: pip3).
     --prefix PREFIX         Use "{PREFIX}-PACKAGE" as the generated package
                               prefix (default is python3-).
+    --alt-prefixes LIST     Colon-separated list of alternative package
+                              prefixes, e.g. python-:python3-: (default:
+                              python-).
     --package-ext EXT       Specifies the package extension (default: txz).
                               Ignored if --dir is specified.
     --no-makepkg            Do not attempt to run makepkg to build a package.
@@ -117,6 +121,13 @@ main() {
                 PYTHON=python3
                 PKG_PREFIX=python3-
                 BASE_REQUIRES=(python3)
+                ;;
+            --alt-prefixes)
+                let ++ai
+                readarray -d : -t ALT_PKG_PREFIXES <<< "${ARGS[$ai]}"
+                # XXX Here-strings (<<<) add a newline
+                # --> Workaround: strip newlines from the end of the last entry
+                ALT_PKG_PREFIXES[${#ALT_PKG_PREFIXES[@]}-1]=${ALT_PKG_PREFIXES[${#ALT_PKG_PREFIXES[@]}-1]%$'\n'}
                 ;;
             --arch)
                 let ++ai
@@ -337,8 +348,11 @@ pip_install_into_jail() {
 }
 
 pip_package_to_slackpack_name() {
-    local PACKAGE_NAME=$1
-    printf '%s%s\n' "$PKG_PREFIX" "$PACKAGE_NAME" |
+    local \
+        PACKAGE_NAME=$1 \
+        PREFIX=${2:-$PKG_PREFIX}
+
+    printf '%s%s\n' "$PREFIX" "$PACKAGE_NAME" |
         tr A-Z a-z |
         tr _ -
 }
@@ -357,8 +371,15 @@ gen_slack_required() {
             # TODO Some are formatted with a number, e.g. click>=7.1.2
             _PIP_BASE=${_LINE%%[<>=]*}
             _VER_REQ=${_LINE:${#_PIP_BASE}}
-            _SLK_BASE=$(pip_package_to_slackpack_name "$_PIP_BASE")
-            printf '%s%s\n' "$_SLK_BASE" "$_VER_REQ"
+            for PREFIX in \
+                "$PKG_PREFIX" \
+                "${ALT_PKG_PREFIXES[@]}" \
+                ; do
+                    _SLK_BASE=$(pip_package_to_slackpack_name "$_PIP_BASE" "$PREFIX")
+                    printf '%s%s\n' "$_SLK_BASE" "$_VER_REQ"
+            done |
+                sort -u |
+                sed -z -e 's,\n, | ,'
         done
     ) |
     sort -u
