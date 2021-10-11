@@ -345,7 +345,7 @@ pip_install_into_jail() {
         --ignore-installed \
         --no-deps \
         --no-warn-script-location \
-        --root "$JAIL"
+        --root "$JAIL" || exit
 }
 
 pip_package_to_slackpack_name() {
