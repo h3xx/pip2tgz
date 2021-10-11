@@ -3,7 +3,7 @@
 
 set -e
 
-readonly VERSION=0.0.1
+readonly VERSION=0.1.0
 readonly PIP2TGZ=pip2tgz
 readonly PIP2TGZ_AUTHOR='Dan Church <h3xx@gmx.com>'
 readonly PIP_ARGS_GENERAL=(
