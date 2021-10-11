@@ -260,6 +260,7 @@ make_package_jail() {
     pip_install_into_jail "$JAIL" "$PACKAGE_NAME"
     install_slackware_metadata "$JAIL" "$PACKAGE_BASE"
     install_docdir "$JAIL" "$PACKAGE_BASE" "$TARBALL_FILENAME" "$VER"
+    cleanup_jail "$JAIL"
     fix_jail_permissions "$JAIL"
 }
 
@@ -508,6 +509,15 @@ install_docdir() {
         fi
     fi
 
+}
+
+cleanup_jail() {
+    local JAIL=$1
+    find "$JAIL" \
+        -type f \
+        -regextype posix-egrep \
+        -regex '.*\.egg-info/installed-files\.txt' \
+        -delete
 }
 
 fix_jail_permissions() {
