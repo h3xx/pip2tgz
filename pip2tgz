@@ -25,6 +25,7 @@ ALT_PKG_PREFIXES=(python-)
 BUILD_TAG=
 BUILD_NUMBER=1
 PKG_EXT=txz
+IN_PKG_BASE=
 ARCH=$(uname -m)
 USE_MAKEPKG=1
 FORCE=0
@@ -65,6 +66,9 @@ Options:
                               python-).
     --package-ext EXT       Specifies the package extension (default: txz).
                               Ignored if --dir is specified.
+    --package-name,--name NAME Set the exact package name (default:
+                              automatically determined by PIP package name).
+                              Overrides --prefix.
     --no-makepkg            Do not attempt to run makepkg to build a package.
                               Really only useful with --jail.
     --jail-only JAIL        Set the package jail location to JAIL and don't run
@@ -175,6 +179,10 @@ main() {
                 let ++ai
                 PKG_EXT=${ARGS[$ai]}
                 ;;
+            --package-name|--name)
+                let ++ai
+                IN_PKG_BASE=${ARGS[$ai]}
+                ;;
             --prefix)
                 let ++ai
                 PKG_PREFIX=${ARGS[$ai]}
@@ -248,22 +256,23 @@ main() {
 }
 
 make_package_jail() {
-    # PACKAGE_NAME: The requested package e.g. 'Foolibrary', 'MyPackage==1.0.0'
+    # REQ_PACKAGE_NAME: The requested package e.g. 'Foolibrary', 'MyPackage==1.0.0'
     # TARBALL_FILENAME: The full path to the tarball generating the package
     # JAIL: Full path to build jail directory
     # VER: The detected package version
     local \
-        PACKAGE_NAME=$1 \
+        REQ_PACKAGE_NAME=$1 \
         TARBALL_FILENAME=$2 \
         JAIL=$3 \
         VER=$4
-    # PACKAGE_BASE: Real base name of package with capitalization intact, e.g.
+    # PACKAGE_NAME: Real base name of package with capitalization intact, e.g.
     #   MyLibrary
-    local -r PACKAGE_BASE=$(tarball_name "$TARBALL_FILENAME")
+    local -r PACKAGE_NAME=$(tarball_name "$TARBALL_FILENAME")
+    local -r PKG_BASE=${IN_PKG_BASE:-$(pip_package_to_slackpack_name "$REQ_PACKAGE_NAME")}
 
-    pip_install_into_jail "$JAIL" "$PACKAGE_NAME"
-    install_slackware_metadata "$JAIL" "$PACKAGE_BASE"
-    install_docdir "$JAIL" "$PACKAGE_BASE" "$TARBALL_FILENAME" "$VER"
+    pip_install_into_jail "$JAIL" "$REQ_PACKAGE_NAME"
+    install_slackware_metadata "$JAIL" "$PACKAGE_NAME" "$PKG_BASE"
+    install_docdir "$JAIL" "$PKG_BASE" "$TARBALL_FILENAME" "$VER"
     cleanup_jail "$JAIL"
     fix_jail_permissions "$JAIL"
 }
@@ -276,25 +285,25 @@ pip_cmd() {
 
 pip_download() {
     local \
-        PACKAGE_NAME=$1 \
+        REQ_PACKAGE_NAME=$1 \
         DEST_DIR=${2:-$TEMPDIR}
-    pip_cmd download "$PACKAGE_NAME" \
+    pip_cmd download "$REQ_PACKAGE_NAME" \
         "${PIP_ARGS_GENERAL[@]}" \
         -d "$TEMPDIR" \
         --no-binary :all:
 }
 
 tarball_file() {
-    local PACKAGE_NAME=$1
+    local REQ_PACKAGE_NAME=$1
     local TARBALL_FILENAME=$(
-        pip_download "$PACKAGE_NAME" "$TEMPDIR" |
+        pip_download "$REQ_PACKAGE_NAME" "$TEMPDIR" |
         tee /dev/stderr |
         grep -oP -- '\S+\.tar\S*\b' |
         head -1
     ) || exit
 
     if [[ -z $TARBALL_FILENAME ]]; then
-        printf 'Failed to parse output from "%s download %s"\n' "$PIP" "$PACKAGE_NAME" >&2
+        printf 'Failed to parse output from "%s download %s"\n' "$PIP" "$REQ_PACKAGE_NAME" >&2
         exit 2
     fi
 
@@ -304,7 +313,7 @@ tarball_file() {
     # Still other times the line says "Downloading MyPackage-1.0.0.tar.gz (7.8 MB)"
     TARBALL_FILENAME=$TEMPDIR/${TARBALL_FILENAME##*/}
     if [[ ! -f $TARBALL_FILENAME ]]; then
-        printf 'Failed to download %s\n' "$PACKAGE_NAME" >&2
+        printf 'Failed to download %s\n' "$REQ_PACKAGE_NAME" >&2
         exit 2
     fi
     printf '%s\n' "$TARBALL_FILENAME"
@@ -338,8 +347,8 @@ tarball_name() {
 }
 
 python_deps() {
-    local PACKAGE_NAME=$1
-    pip_download "$PACKAGE_NAME" 2>&1 |
+    local REQ_PACKAGE_NAME=$1
+    pip_download "$REQ_PACKAGE_NAME" 2>&1 |
         grep ^Collecting |
         sed -e '1d' |
         cut -d ' ' -f 2-
@@ -348,8 +357,8 @@ python_deps() {
 pip_install_into_jail() {
     local \
         JAIL=$1 \
-        PACKAGE_NAME=$2
-    pip_cmd install "$PACKAGE_NAME" \
+        REQ_PACKAGE_NAME=$2
+    pip_cmd install "$REQ_PACKAGE_NAME" \
         "${PIP_ARGS_GENERAL[@]}" \
         --no-binary :all: \
         --ignore-installed \
@@ -360,24 +369,24 @@ pip_install_into_jail() {
 
 pip_package_to_slackpack_name() {
     local \
-        PACKAGE_NAME=$1 \
+        REQ_PACKAGE_NAME=$1 \
         PREFIX=${2:-$PKG_PREFIX}
 
-    printf '%s%s\n' "$PREFIX" "$PACKAGE_NAME" |
+    printf '%s%s\n' "$PREFIX" "$REQ_PACKAGE_NAME" |
         tr A-Z a-z |
         tr _ -
 }
 
 gen_slack_required() {
     local \
-        PACKAGE_NAME=$1
+        REQ_PACKAGE_NAME=$1
     (
         # Add deps in $BASE_REQUIRES
         for _SLACK_PKG in "${BASE_REQUIRES[@]}"; do
             printf '%s\n' "$_SLACK_PKG"
         done
         # Scan and add python library deps
-        python_deps "$PACKAGE_NAME" |
+        python_deps "$REQ_PACKAGE_NAME" |
         while read -r _LINE; do
             # TODO Some are formatted with a number, e.g. click>=7.1.2
             _PIP_BASE=${_LINE%%[<>=]*}
@@ -399,12 +408,12 @@ gen_slack_required() {
 install_slackware_metadata() {
     local \
         JAIL=$1 \
-        PACKAGE_NAME=$2
+        PACKAGE_NAME=$2 \
+        PKG_BASE=$3
 
     mkdir -p -- "$JAIL/install"
 
     # slack-desc
-    local PKG_BASE=$(pip_package_to_slackpack_name "$PACKAGE_NAME")
     # How far to indent the handy ruler in the slack-desc
     local _INDENT=${PKG_BASE//?/ }
     cat <<EOF >"$JAIL/install/slack-desc"
@@ -436,12 +445,10 @@ EOF
 install_docdir() {
     local \
         JAIL=$1 \
-        PACKAGE_NAME=$2 \
+        PKG_BASE=$2 \
         TARBALL_FILENAME=$3 \
         VER=$4 \
         FN
-
-    local PKG_BASE=$(pip_package_to_slackpack_name "$PACKAGE_NAME")
 
     local DOCDIR=$JAIL/usr/doc/$PKG_BASE-$VER
     mkdir -p -- "$DOCDIR"
