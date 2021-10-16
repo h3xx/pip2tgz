@@ -535,6 +535,65 @@ cleanup_jail() {
         -regextype posix-egrep \
         -regex '.*\.egg-info/installed-files\.txt' \
         -delete
+
+    # Fix some bad [non-Slackware] install paths
+    if [[ -d $JAIL/usr/share/man ]]; then
+        cp -a -- "$JAIL/usr/share/man" "$JAIL/usr/" &&
+        rm -rf -- "$JAIL/usr/share/man" &&
+        # Remove empty dirs
+        (rmdir -p -- "$JAIL/usr/share" 2>/dev/null; true) || exit
+    fi
+
+    if [[ -d $JAIL/usr/share/doc ]]; then
+        rm -rf -- "$JAIL/usr/share/doc" &&
+        # Remove empty dirs
+        (rmdir -p -- "$JAIL/usr/share" 2>/dev/null; true) || exit
+    fi
+
+    # Gzip man pages (if any)
+    if [[ -d $JAIL/usr/man ]]; then
+        local FN LINK EXT=.gz
+        shopt -s globstar nullglob
+
+        # Compress files
+        for FN in "$JAIL/usr/man/"**; do
+            if [[
+                -f $FN
+                && ! -L $FN
+                # Not already compressed
+                && $FN != *$EXT
+            ]]; then
+                gzip -9 -- "$FN"
+            fi
+        done
+
+        # Update links, e.g.
+        # /usr/man/man1/foo.1 -> bar.1
+        # to
+        # /usr/man/man1/foo.1.gz -> bar.1.gz
+        for FN in "$JAIL/usr/man/"**; do
+            if [[
+                -L $FN
+                && ! -d $FN
+                # Not already compressed
+                && $FN != *$EXT
+            ]]; then
+                # Convert absolute path links to links within the jail
+                TARGET=$(readlink -f -- "$FN")
+                # Fix links to places outside the jail
+                if [[ $TARGET = /usr/man* ]]; then
+                    TARGET=$JAIL$TARGET
+                fi
+                if [[
+                    ! -e $FN
+                    && -e $TARGET$EXT
+                ]]; then
+                    ln -sf -- "$(realpath --relative-to="$(dirname -- "$FN")" -- "$TARGET$EXT")" "$FN$EXT"
+                    rm -f -- "$FN"
+                fi
+            fi
+        done
+    fi
 }
 
 fix_jail_permissions() {
