@@ -74,8 +74,8 @@ Options:
     --jail-only JAIL        Set the package jail location to JAIL and don't run
                               makepkg to build a package.
     --jail JAIL             Set the package jail location to JAIL. The script
-                              will clear this directory before outputting its
-                              files there. By default, it uses a temporary
+                              will not clear this directory before outputting
+                              its files there. By default, it uses a temporary
                               directory as the build jail.
     --slack-required        Output the slack-required contents and exit.
 
