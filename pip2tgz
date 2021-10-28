@@ -41,9 +41,15 @@ cleanup() {
 }
 trap 'cleanup' EXIT
 
-HELP_MESSAGE() {
+USAGE() {
     cat <<EOF
 Usage: $PIP2TGZ [OPTIONS] PACKAGE...
+EOF
+}
+
+HELP_MESSAGE() {
+    USAGE
+    cat <<EOF
 Make Slackware packages from PIP modules.
 Options:
     --help                  Show this help message.
@@ -194,12 +200,17 @@ main() {
         esac
     done
 
+    shift $ai
+
+    if [[ $# -eq 0 ]]; then
+        USAGE
+        ARG_ERRORS=1
+    fi
+
     if [[ $ARG_ERRORS -ne 0 ]]; then
         echo "Try '$PIP2TGZ --help' for more information." >&2
         exit 2
     fi
-
-    shift $ai
 
     if [[ $MODE = 'package' && $UID -ne 0 && $USE_MAKEPKG -ne 0 ]]; then
         if [[ $FORCE -eq 0 ]]; then
