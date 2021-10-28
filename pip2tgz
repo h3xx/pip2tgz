@@ -125,10 +125,7 @@ main() {
                 ;;
             --alt-prefixes)
                 let ++ai
-                readarray -d : -t ALT_PKG_PREFIXES <<< "${ARGS[$ai]}"
-                # XXX Here-strings (<<<) add a newline
-                # --> Workaround: strip newlines from the end of the last entry
-                ALT_PKG_PREFIXES[${#ALT_PKG_PREFIXES[@]}-1]=${ALT_PKG_PREFIXES[${#ALT_PKG_PREFIXES[@]}-1]%$'\n'}
+                split_array ALT_PKG_PREFIXES ':' <<< "${ARGS[$ai]}"
                 ;;
             --arch)
                 let ++ai
@@ -250,6 +247,15 @@ main() {
                 ;;
         esac
     done
+}
+
+split_array() {
+    local -n ARR=$1
+    local -r DELIM=$2
+    readarray -d "$DELIM" -t ARR
+    # XXX Here-strings (<<<) add a newline
+    # --> Workaround: strip newlines from the end of the last entry
+    ARR[-1]=${ARR[-1]%$'\n'}
 }
 
 make_package_jail() {
