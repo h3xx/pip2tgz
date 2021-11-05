@@ -243,12 +243,13 @@ main() {
                 _JAIL=$(realpath -- "${JAIL:-$(mktemp -d -p "$TEMPDIR" -t "jail.XXXXXX")}")
                 _TARBALL_FILENAME=$(tarball_file "$PKG")
                 _VER=$(tarball_version "$_TARBALL_FILENAME")
+                _PACKAGE_NAME=$(tarball_name "$_TARBALL_FILENAME")
 
                 # Correct package name as it exists in pip
                 # e.g. Foo-Bar could be and probably is Foo_Bar
                 make_package_jail "$PKG" "$_TARBALL_FILENAME" "$_JAIL" "$_VER"
                 if [[ $USE_MAKEPKG -ne 0 ]]; then
-                    _OUTPUT=$(realpath -- "$PKG_OUTDIR")/$(pip_package_to_slackpack_name "$PKG")-$_VER-$ARCH-$BUILD_NUMBER$BUILD_TAG.$PKG_EXT
+                    _OUTPUT=$(realpath -- "$PKG_OUTDIR")/$(pip_package_to_slackpack_name "$_PACKAGE_NAME")-$_VER-$ARCH-$BUILD_NUMBER$BUILD_TAG.$PKG_EXT
                     echo "outputting to $_OUTPUT" >&2
                     tarup_package "$_JAIL" "$_OUTPUT"
                 fi
@@ -282,7 +283,7 @@ make_package_jail() {
     # PACKAGE_NAME: Real base name of package with capitalization intact, e.g.
     #   MyLibrary
     local -r PACKAGE_NAME=$(tarball_name "$TARBALL_FILENAME")
-    local -r PKG_BASE=${IN_PKG_BASE:-$(pip_package_to_slackpack_name "$REQ_PACKAGE_NAME")}
+    local -r PKG_BASE=${IN_PKG_BASE:-$(pip_package_to_slackpack_name "$PACKAGE_NAME")}
 
     pip_install_into_jail "$JAIL" "$REQ_PACKAGE_NAME"
     install_slackware_metadata "$JAIL" "$PACKAGE_NAME" "$PKG_BASE"
