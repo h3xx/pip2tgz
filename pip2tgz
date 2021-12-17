@@ -406,15 +406,19 @@ gen_slack_required() {
             # TODO Some are formatted with a number, e.g. click>=7.1.2
             _PIP_BASE=${_LINE%%[<>=]*}
             _VER_REQ=${_LINE:${#_PIP_BASE}}
-            for PREFIX in \
-                "$PKG_PREFIX" \
-                "${ALT_PKG_PREFIXES[@]}" \
-                ; do
-                    _SLK_BASE=$(pip_package_to_slackpack_name "$_PIP_BASE" "$PREFIX")
-                    printf '%s%s\n' "$_SLK_BASE" "$_VER_REQ"
-            done |
-                sort -u |
-                sed -z -e 's,\n, | ,'
+            # Some are formatted with a comma, e.g. h11<1,>=0.9.0
+            IFS=,
+            for __VER in ${_VER_REQ}; do
+                for PREFIX in \
+                    "$PKG_PREFIX" \
+                    "${ALT_PKG_PREFIXES[@]}" \
+                    ; do
+                        _SLK_BASE=$(pip_package_to_slackpack_name "$_PIP_BASE" "$PREFIX")
+                        printf '%s%s\n' "$_SLK_BASE" "$__VER"
+                done |
+                    sort -u |
+                    sed -z -e 's,\n, | ,'
+            done
         done
     ) |
     sort -u
