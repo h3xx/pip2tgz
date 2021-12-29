@@ -408,7 +408,12 @@ gen_slack_required() {
             _VER_REQ=${_LINE:${#_PIP_BASE}}
             # Some are formatted with a comma, e.g. h11<1,>=0.9.0
             IFS=,
-            for __VER in ${_VER_REQ}; do
+            _VERS=(${_VER_REQ})
+            # Some have empty versions, e.g. 'Flask'
+            if [[ ${#_VERS[@]} -eq 0 ]]; then
+                _VERS+=('')
+            fi
+            for __VER in "${_VERS[@]}"; do
                 for PREFIX in \
                     "$PKG_PREFIX" \
                     "${ALT_PKG_PREFIXES[@]}" \
