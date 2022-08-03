@@ -422,7 +422,8 @@ gen_slack_required() {
                         printf '%s%s\n' "$_SLK_BASE" "$__VER"
                 done |
                     sort -u |
-                    sed -z -e 's,\n, | ,'
+                    # Join lines with ' | ', with a newline at the end
+                    sed -z -e 's,\n, | ,g; s, | $,\n,'
             done
         done
     ) |
