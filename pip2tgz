@@ -18,6 +18,7 @@ readonly MAKEPKG_ARGS=(
 
 PIP=pip3
 PYTHON=python3
+PYTHON_VER=3
 BASE_REQUIRES=(python3)
 PKG_OUTDIR=/tmp
 PKG_PREFIX=python3-
@@ -30,6 +31,58 @@ ARCH=$(uname -m)
 USE_MAKEPKG=1
 FORCE=0
 MODE=package
+
+SLACKPACK_CONTAINS=(
+    # The state of -current as of 2022-08-03
+    # (Only include packages that don't follow the convention /^python\d?-[a-z]+/)
+    'appdirs:2:python2-module-collection'
+    'brotli:3:brotli'
+    'caca:3:libcaca'
+    'certifi:2:python2-module-collection'
+    'chardet:2:python2-module-collection'
+    'cython:2:python2-module-collection'
+    'cython:3:Cython'
+    'dbus-python:2:python2-module-collection'
+    'dbus-python:3:dbus-python'
+    'docutils:2:python2-module-collection'
+    'enum34:2:python2-module-collection'
+    'future:2:python2-module-collection'
+    'gpg:3:gpgme'
+    'gyp:3:gyp'
+    'idna:2:python2-module-collection'
+    'jinja2:3:python-Jinja2'
+    'lensfun:3:lensfun'
+    'm2crypto:2:python2-module-collection'
+    'm2crypto:3:M2Crypto'
+    'mako:2:python2-module-collection'
+    'mako:3:Mako'
+    'markupsafe:3:python-MarkupSafe'
+    'notify2:2:python2-module-collection'
+    'packaging:2:python2-module-collection'
+    'pip:2:python2-module-collection'
+    'ply:2:python2-module-collection'
+    'pycairo:2:python2-module-collection'
+    'pycairo:3:pycairo'
+    'pycups:2:python2-module-collection'
+    'pycups:3:pycups'
+    'pycurl:2:python2-module-collection'
+    'pycurl:3:pycurl'
+    'pygments:2:python2-module-collection'
+    'pygobject:3:pygobject'
+    'pygtk:*:pygtk'
+    'pyparsing:2:python2-module-collection'
+    'pyparsing:3:pyparsing'
+    'pyqt5:*:PyQt5'
+    'pyxdg:2:python2-module-collection'
+    'pyxdg:3:pyxdg'
+    'pyyaml:3:python-PyYAML'
+    'requests:2:python2-module-collection'
+    'sane:2:python2-module-collection'
+    'setuptools:2:python2-module-collection'
+    'typing:2:python2-module-collection'
+    'urllib3:2:python2-module-collection'
+    'xdg:3:pyxdg'
+)
 
 SLACK_DESC_BANNER0="Packaged by $PIP2TGZ"
 SLACK_DESC_BANNER1="$PIP2TGZ by $PIP2TGZ_AUTHOR"
@@ -80,7 +133,20 @@ Options:
                               will not clear this directory before outputting
                               its files there. By default, it uses a temporary
                               directory as the build jail.
+    --required-hint HINT|HINT.. Give hints as to what packages contain which
+                              pip packages. Affects the contents of
+                              slack-required. See HINTS.
     --slack-required        Output the slack-required contents and exit.
+
+HINTS:
+
+    Hints take the form of "PIP PACKAGE:PYTHON VER:SLACKWARE PACKAGE BASENAME".
+    Examples:
+    * 'pycairo:2:python2-module-collection' means 'pycairo' PIP package for
+      Python 2.x is contained in the 'python2-module-collection' package
+    * 'pyqt5:*:PyQt5' means the 'pyqt5' PIP is contained in the 'PyQt5' package
+      for all versions of Python. This would mean that PyQt5 is a package
+      containing both Python 2 and Python 3 libraries.
 
 EOF
     COPYRIGHT_MESSAGE
@@ -120,12 +186,14 @@ main() {
             -2)
                 PIP=pip2
                 PYTHON=python2
+                PYTHON_VER=2
                 PKG_PREFIX=python2-
                 BASE_REQUIRES=(python2)
                 ;;
             -3)
                 PIP=pip3
                 PYTHON=python3
+                PYTHON_VER=3
                 PKG_PREFIX=python3-
                 BASE_REQUIRES=(python3)
                 ;;
@@ -186,6 +254,10 @@ main() {
             --prefix)
                 let ++ai
                 PKG_PREFIX=${ARGS[$ai]}
+                ;;
+            --required-hint)
+                let ++ai
+                SLACKPACK_CONTAINS+=("${ARGS[ai]}")
                 ;;
             --slack-required)
                 MODE=slack-required
@@ -414,13 +486,21 @@ gen_slack_required() {
                 _VERS+=('')
             fi
             for __VER in "${_VERS[@]}"; do
+                (
+                if get_hinted_packages "$_PIP_BASE" "$__VER"; then
+                    # Covered by hint.
+                    exit
+                fi
+
+                # We have to guess. E.g. 'python-DEP > 2.0.0 | python3-DEP > 2.0.0'
                 for PREFIX in \
                     "$PKG_PREFIX" \
                     "${ALT_PKG_PREFIXES[@]}" \
                     ; do
                         _SLK_BASE=$(pip_package_to_slackpack_name "$_PIP_BASE" "$PREFIX")
                         printf '%s%s\n' "$_SLK_BASE" "$__VER"
-                done |
+                done
+                ) |
                     sort -u |
                     # Join lines with ' | ', with a newline at the end
                     sed -z -e 's,\n, | ,g; s, | $,\n,'
@@ -428,6 +508,50 @@ gen_slack_required() {
         done
     ) |
     sort -u
+}
+
+get_hinted_packages() (
+    PIP_PACKAGE_BASE=$1
+    VER=$2
+    PKG_LOWER=$(tr A-Z a-z <<< "$PIP_PACKAGE_BASE")
+    FOUND=0
+
+    # Higher precedence: exact Python version
+    for HINT in "${SLACKPACK_CONTAINS[@]}"; do
+        if [[ $HINT = "$PKG_LOWER:$PYTHON_VER:"* ]]; then
+            FOUND=1
+            hint_to_required "$HINT" "$VER"
+        fi
+    done
+    if [[ $FOUND -ne 0 ]]; then
+        return 0
+    fi
+
+    # Lower precedence: wildcard Python version
+    for HINT in "${SLACKPACK_CONTAINS[@]}"; do
+        if [[ $HINT = "$PKG_LOWER:*:"* ]]; then
+            FOUND=1
+            hint_to_required "$HINT" "$VER"
+        fi
+    done
+    if [[ $FOUND -ne 0 ]]; then
+        return 0
+    fi
+
+    return 1
+)
+
+hint_to_required() {
+    local \
+        HINT=$1 \
+        VER=$2 \
+        CONTAINED_IN \
+        I
+
+    split_array CONTAINED_IN ':' <<< "$HINT"
+    for (( I = 2; I < ${#CONTAINED_IN[@]}; ++I )); do
+        printf '%s%s\n' "${CONTAINED_IN[I]}" "$VER"
+    done
 }
 
 install_slackware_metadata() {
