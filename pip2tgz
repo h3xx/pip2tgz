@@ -17,7 +17,6 @@ readonly MAKEPKG_ARGS=(
 )
 
 PIP=pip3
-PYTHON=python3
 PYTHON_VER=3
 BASE_REQUIRES=(python3)
 PKG_OUTDIR=/tmp
@@ -185,14 +184,12 @@ main() {
                 ;;
             -2)
                 PIP=pip2
-                PYTHON=python2
                 PYTHON_VER=2
                 PKG_PREFIX=python2-
                 BASE_REQUIRES=(python2)
                 ;;
             -3)
                 PIP=pip3
-                PYTHON=python3
                 PYTHON_VER=3
                 PKG_PREFIX=python3-
                 BASE_REQUIRES=(python3)
@@ -373,7 +370,7 @@ pip_cmd() {
 pip_download() {
     local \
         REQ_PACKAGE_NAME=$1 \
-        DEST_DIR=${2:-$TEMPDIR}
+
     pip_cmd download "$REQ_PACKAGE_NAME" \
         "${PIP_ARGS_GENERAL[@]}" \
         -d "$TEMPDIR" \
@@ -383,7 +380,7 @@ pip_download() {
 tarball_file() {
     local REQ_PACKAGE_NAME=$1
     local TARBALL_FILENAME=$(
-        pip_download "$REQ_PACKAGE_NAME" "$TEMPDIR" |
+        pip_download "$REQ_PACKAGE_NAME" |
         tee /dev/stderr |
         grep -oP -- '\S+\.tar\S*\b' |
         head -1
@@ -701,7 +698,7 @@ cleanup_jail() {
 
     # Gzip man pages (if any)
     if [[ -d $JAIL/usr/man ]]; then
-        local FN LINK EXT=.gz
+        local FN EXT=.gz
         shopt -s globstar nullglob
 
         # Compress files
