@@ -132,9 +132,9 @@ Options:
                               will not clear this directory before outputting
                               its files there. By default, it uses a temporary
                               directory as the build jail.
-    --required-hint HINT|HINT.. Give hints as to what packages contain which
-                              pip packages. Affects the contents of
-                              slack-required. See HINTS.
+    --required-hint HINT    Give a hint as to what packages contain which pip
+                              packages. Affects the contents of slack-required.
+                              Can be specified multiple times. See HINTS.
     --slack-required        Output the slack-required contents and exit.
 
 HINTS:
