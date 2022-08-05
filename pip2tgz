@@ -49,6 +49,7 @@ SLACKPACK_CONTAINS=(
     'gpg:3:gpgme'
     'gyp:3:gyp'
     'idna:2:python2-module-collection'
+    'importlib-metadata:3:python-importlib_metadata'
     'jinja2:3:python-Jinja2'
     'lensfun:3:lensfun'
     'm2crypto:2:python2-module-collection'
