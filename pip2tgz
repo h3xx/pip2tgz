@@ -161,10 +161,10 @@ EOF
 
 COPYRIGHT_MESSAGE() {
     cat <<EOF
-Copyright (C) 2021 $PIP2TGZ_AUTHOR.
-License GPLv3+: GNU GPL version 3 or later (http://gnu.org/licenses/gpl.html).
-This is free software: you are free to change and redistribute it. There is NO
-WARRANTY, to the extent permitted by law.
+Copyright (C) 2021-2022 $PIP2TGZ_AUTHOR.
+License GPLv3: GNU GPL version 3.0 (https://www.gnu.org/licenses/gpl-3.0.html)
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
 EOF
 }
 
